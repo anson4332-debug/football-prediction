@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <title>足球賽事預測中心 (Real-time Football Predictions)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-6">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <!-- Header -->
+        <div class="flex justify-between items-center border-b border-slate-700 pb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-emerald-400">⚽ 現實足球賽事預測中心</h1>
+                <p class="text-sm text-slate-400">數據源: API-Football / football.db / HKJC 譯名</p>
+            </div>
+            <div class="text-right">
+                <span class="text-xs bg-slate-800 border border-slate-700 px-3 py-1 rounded-full text-slate-300">
+                    顯示時段：17:00 - 05:00 (HKT)
+                </span>
+            </div>
+        </div>
+
+        <!-- 準確率 Dashboard -->
+        <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 flex justify-around text-center">
+            <div>
+                <div class="text-xs text-slate-400">當前預測總準確率</div>
+                <div id="accuracy-rate" class="text-3xl font-extrabold text-emerald-400">--%</div>
+            </div>
+            <div class="border-r border-slate-700"></div>
+            <div>
+                <div class="text-xs text-slate-400">已完結追蹤賽事</div>
+                <div id="total-matches" class="text-3xl font-extrabold text-white">--</div>
+            </div>
+        </div>
+
+        <!-- 當前 17:00 - 05:00 賽事列表 -->
+        <div class="bg-slate-800 rounded-lg p-5 border border-slate-700">
+            <h2 class="text-lg font-semibold mb-4 text-emerald-300">今日焦點賽程 (17:00 - 05:00 HKT)</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-700/50 text-slate-300">
+                        <tr>
+                            <th class="p-3">聯賽</th>
+                            <th class="p-3">時間 (HKT)</th>
+                            <th class="p-3">對賽隊伍 (港譯)</th>
+                            <th class="p-3 text-emerald-400">預測波膽</th>
+                            <th class="p-3 text-emerald-400">預測角球</th>
+                            <th class="p-3">即時比分/狀態</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matches-table-body">
+                        <tr><td colspan="6" class="p-4 text-center text-slate-500">正在從伺服器加載現實賽程...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadLiveData() {
+            try {
+                const res = await fetch('/api/matches');
+                const data = await res.json();
+
+                document.getElementById('accuracy-rate').innerText = data.accuracy;
+                document.getElementById('total-matches').innerText = data.totalFinished;
+
+                const tbody = document.getElementById('matches-table-body');
+                if(data.matches.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">當前時段 (17:00-05:00) 暫無開賽賽事</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = data.matches.map(m => `
+                    <tr class="border-b border-slate-700/50 hover:bg-slate-700/20">
+                        <td class="p-3 font-medium text-slate-300">${m.league}</td>
+                        <td class="p-3 text-amber-400">${m.time}</td>
+                        <td class="p-3 font-semibold text-white">${m.homeTeam} vs ${m.awayTeam}</td>
+                        <td class="p-3 font-bold text-emerald-400">${m.predScore}</td>
+                        <td class="p-3 text-emerald-300">${m.predCorners}</td>
+                        <td class="p-3"><span class="bg-slate-700 px-2 py-1 rounded text-xs">${m.status === 'NS' ? '未開賽' : m.score}</span></td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        loadLiveData();
+        setInterval(loadLiveData, 60000); // 每分鐘自動刷新一次前端數據
+    </script>
+</body>
+</html>
