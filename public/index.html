@@ -11,7 +11,11 @@
         <div class="flex justify-between items-center border-b border-slate-700 pb-4">
             <div>
                 <h1 class="text-2xl font-bold text-emerald-400">⚽ 足球賽事實時預測與 Livescore 中心</h1>
-                <p class="text-sm text-slate-400">實時同步官方分鐘數、技術統計 (Stats) 與事件摘要 (Events)</p>
+                <p class="text-sm text-slate-400">
+                    數據源：API-Football / football.db / 
+                    <a href="https://github.com/hudl/open-data" target="_blank" class="text-emerald-400 underline hover:text-emerald-300">Hudl Open Data</a> / 
+                    <a href="https://tipsme.hk/" target="_blank" class="text-amber-400 font-bold underline hover:text-amber-300">TipsMe 社群</a> / HKJC 譯名
+                </p>
             </div>
             <div class="text-right">
                 <span class="text-xs bg-slate-800 border border-slate-700 px-3 py-1 rounded-full text-emerald-300 animate-pulse">
@@ -35,7 +39,7 @@
 
         <!-- 賽事列表 -->
         <div class="bg-slate-800 rounded-lg p-5 border border-slate-700">
-            <h2 class="text-lg font-semibold mb-4 text-emerald-300">今日焦點賽程 (點擊查看詳盡 Stats & Events)</h2>
+            <h2 class="text-lg font-semibold mb-4 text-emerald-300">今日焦點賽程 (點擊查看詳盡 Stats & TipsMe 心水)</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
                     <thead class="bg-slate-700/50 text-slate-300">
@@ -53,6 +57,14 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- Footer 致謝 -->
+        <div class="text-center text-xs text-slate-500 pt-6 border-t border-slate-800">
+            數據來源及致謝：
+            <a href="https://tipsme.hk/" target="_blank" class="text-amber-400 underline hover:text-amber-300">TipsMe 香港足球社群</a> | 
+            <a href="https://github.com/hudl/open-data" target="_blank" class="text-slate-400 underline hover:text-emerald-400 ml-1">Hudl Open Data</a> | 
+            <a href="https://v3.football.api-sports.io/" target="_blank" class="text-slate-400 underline hover:text-emerald-400 ml-1">API-Football</a>
         </div>
     </div>
 
@@ -74,7 +86,17 @@
                     <span id="modal-status">實時進行中 (LIVE)</span>
                 </div>
                 <div class="text-4xl font-black text-white tracking-widest" id="modal-score">1 - 1</div>
-                <div class="text-xs text-emerald-400 font-bold" id="modal-elapsed">比賽進行中: 70' 分鐘</div>
+                <div class="text-xs text-emerald-400 font-bold" id="modal-elapsed">精準實時進度: 70' 分鐘</div>
+            </div>
+
+            <!-- 🔥 TipsMe 社群熱門心水 -->
+            <div class="bg-amber-950/40 border border-amber-600/40 p-3 rounded-lg flex justify-between items-center text-xs">
+                <span class="text-amber-300 font-bold flex items-center gap-1">
+                    🔥 TipsMe 社群熱門心水：
+                </span>
+                <span id="modal-tipsme-trend" class="text-white font-extrabold bg-amber-600/60 px-2.5 py-1 rounded border border-amber-500">
+                    --
+                </span>
             </div>
 
             <!-- 📊 技術統計 (Stats) -->
@@ -85,15 +107,14 @@
                 </div>
             </div>
 
-            <!-- ⏱️ 賽事事件摘要 (Events / Summary) -->
+            <!-- ⏱️ 賽事事件摘要 (Events) -->
             <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700 space-y-3">
-                <div class="text-xs font-bold text-emerald-400 uppercase">⏱️ 賽事事件摘要 (Match Events & Summary)</div>
+                <div class="text-xs font-bold text-emerald-400 uppercase">⏱️ 賽事事件摘要 (Match Events)</div>
                 <div id="modal-events-container" class="space-y-2 text-xs max-h-36 overflow-y-auto pr-2">
                     <div class="text-center text-slate-400">正在加載 Events 摘要...</div>
                 </div>
             </div>
 
-            <!-- AI 預測數據 -->
             <div class="flex justify-between text-xs text-slate-300 bg-slate-700/30 p-3 rounded-lg border border-slate-700">
                 <span>預測波膽: <strong id="modal-pred-score" class="text-emerald-300">--</strong></span>
                 <span>預測角球: <strong id="modal-pred-corners" class="text-emerald-300">--</strong></span>
@@ -151,18 +172,17 @@
             document.getElementById('modal-time').innerText = `開賽時間: ${m.time}`;
             document.getElementById('modal-status').innerText = m.status;
             document.getElementById('modal-score').innerText = m.score;
-            document.getElementById('modal-elapsed').innerText = `精準實時進度: ${m.elapsed ? m.elapsed + '\'' : '未開始'} 分鐘`;
+            document.getElementById('modal-elapsed').innerText = `精準實時進度: ${m.elapsed ? m.elapsed + '\'' : '未開始'}`;
             document.getElementById('modal-pred-score').innerText = m.predScore;
             document.getElementById('modal-pred-corners').innerText = m.predCorners;
+            document.getElementById('modal-tipsme-trend').innerText = m.tipsmeTrend || '主勝 (Home Win)';
 
             document.getElementById('match-modal').classList.remove('hidden');
 
-            // 請求詳盡 Stats 與 Events
             try {
                 const res = await fetch(`/api/match/${id}`);
                 const data = await res.json();
 
-                // 渲染 Stats
                 const statsContainer = document.getElementById('modal-stats-container');
                 if (data.statistics && data.statistics.length >= 2) {
                     const homeStats = data.statistics[0].statistics || [];
@@ -182,7 +202,6 @@
                     statsContainer.innerHTML = `<div class="text-center text-slate-400">暫無詳細技術統計數據</div>`;
                 }
 
-                // 渲染 Events / Summary
                 const eventsContainer = document.getElementById('modal-events-container');
                 if (data.events && data.events.length > 0) {
                     eventsContainer.innerHTML = data.events.map(ev => `
@@ -206,7 +225,7 @@
         }
 
         loadLiveData();
-        setInterval(loadLiveData, 20000); // 每 20 秒自動同步最新比分與分鐘數
+        setInterval(loadLiveData, 20000);
     </script>
 </body>
 </html>
