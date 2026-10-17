@@ -2,7 +2,7 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <title>足球賽事實時預測中心 (Livescore & AI Predictions)</title>
+    <title>足球賽事實時預測與 Livescore 中心</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen p-6">
@@ -10,12 +10,12 @@
         <!-- Header -->
         <div class="flex justify-between items-center border-b border-slate-700 pb-4">
             <div>
-                <h1 class="text-2xl font-bold text-emerald-400">⚽ 足球賽事實時預測中心 (Livescore)</h1>
-                <p class="text-sm text-slate-400">點擊任意賽事可查看實時比分與動態走勢預測</p>
+                <h1 class="text-2xl font-bold text-emerald-400">⚽ 足球賽事實時預測與 Livescore 中心</h1>
+                <p class="text-sm text-slate-400">實時同步官方分鐘數、技術統計 (Stats) 與事件摘要 (Events)</p>
             </div>
             <div class="text-right">
                 <span class="text-xs bg-slate-800 border border-slate-700 px-3 py-1 rounded-full text-emerald-300 animate-pulse">
-                    🟢 實時連線中 (Live)
+                    🟢 官方實時連線中 (Live Sync)
                 </span>
             </div>
         </div>
@@ -35,7 +35,7 @@
 
         <!-- 賽事列表 -->
         <div class="bg-slate-800 rounded-lg p-5 border border-slate-700">
-            <h2 class="text-lg font-semibold mb-4 text-emerald-300">今日焦點賽程 (點擊查看 Livescore 實時數據)</h2>
+            <h2 class="text-lg font-semibold mb-4 text-emerald-300">今日焦點賽程 (點擊查看詳盡 Stats & Events)</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
                     <thead class="bg-slate-700/50 text-slate-300">
@@ -43,22 +43,22 @@
                             <th class="p-3">聯賽</th>
                             <th class="p-3">時間 (HKT)</th>
                             <th class="p-3">對賽隊伍 (港譯)</th>
-                            <th class="p-3 text-emerald-400">賽前/賽中預測波膽</th>
+                            <th class="p-3 text-emerald-400">預測波膽</th>
                             <th class="p-3 text-emerald-400">角球預測</th>
                             <th class="p-3">實時比分 / 狀態</th>
                         </tr>
                     </thead>
                     <tbody id="matches-table-body">
-                        <tr><td colspan="6" class="p-4 text-center text-slate-400">正在加載實時賽程...</td></tr>
+                        <tr><td colspan="6" class="p-4 text-center text-slate-400">正在同步實時賽程數據...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <!-- 🔍 Livescore 彈出視窗 (Modal) -->
-    <div id="match-modal" class="fixed inset-0 bg-black/70 hidden flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-600 rounded-xl max-w-lg w-full p-6 space-y-5 relative shadow-2xl">
+    <!-- 🔍 Livescore 詳盡彈出視窗 (Modal) -->
+    <div id="match-modal" class="fixed inset-0 bg-black/80 hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-600 rounded-xl max-w-2xl w-full p-6 space-y-5 relative shadow-2xl my-8">
             <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-xl font-bold">✕</button>
             
             <div class="text-center border-b border-slate-700 pb-3">
@@ -67,21 +67,36 @@
                 <div id="modal-time" class="text-xs text-slate-400 mt-1">開賽時間</div>
             </div>
 
-            <!-- Livescore 即時比分板 -->
-            <div class="bg-slate-900/80 rounded-lg p-4 border border-slate-700 text-center space-y-2">
-                <div class="text-xs text-amber-400 font-semibold uppercase tracking-wider" id="modal-status">實時進行中</div>
+            <!-- Livescore 即時比分與精準分鐘數 -->
+            <div class="bg-slate-900/90 rounded-lg p-4 border border-slate-700 text-center space-y-2">
+                <div class="text-xs text-amber-400 font-semibold uppercase tracking-wider flex justify-center items-center gap-2">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+                    <span id="modal-status">實時進行中 (LIVE)</span>
+                </div>
                 <div class="text-4xl font-black text-white tracking-widest" id="modal-score">1 - 1</div>
-                <div class="text-xs text-slate-400" id="modal-elapsed">比賽進行中: 58' 分鐘</div>
+                <div class="text-xs text-emerald-400 font-bold" id="modal-elapsed">比賽進行中: 70' 分鐘</div>
             </div>
 
-            <!-- 動態實時預測分析 -->
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-700 space-y-2">
-                <div class="text-xs font-bold text-emerald-400 uppercase">📈 AI 實時走勢預測 (In-Play Analysis)</div>
-                <p id="modal-analysis" class="text-sm text-slate-300 leading-relaxed">分析載入中...</p>
-                <div class="flex justify-between text-xs text-slate-400 pt-2 border-t border-slate-700">
-                    <span>預測波膽: <strong id="modal-pred-score" class="text-emerald-300">--</strong></span>
-                    <span>預測角球: <strong id="modal-pred-corners" class="text-emerald-300">--</strong></span>
+            <!-- 📊 技術統計 (Stats) -->
+            <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700 space-y-3">
+                <div class="text-xs font-bold text-emerald-400 uppercase">📊 技術統計 (Match Statistics)</div>
+                <div id="modal-stats-container" class="space-y-2 text-xs">
+                    <div class="text-center text-slate-400">正在加載 Stats 數據...</div>
                 </div>
+            </div>
+
+            <!-- ⏱️ 賽事事件摘要 (Events / Summary) -->
+            <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700 space-y-3">
+                <div class="text-xs font-bold text-emerald-400 uppercase">⏱️ 賽事事件摘要 (Match Events & Summary)</div>
+                <div id="modal-events-container" class="space-y-2 text-xs max-h-36 overflow-y-auto pr-2">
+                    <div class="text-center text-slate-400">正在加載 Events 摘要...</div>
+                </div>
+            </div>
+
+            <!-- AI 預測數據 -->
+            <div class="flex justify-between text-xs text-slate-300 bg-slate-700/30 p-3 rounded-lg border border-slate-700">
+                <span>預測波膽: <strong id="modal-pred-score" class="text-emerald-300">--</strong></span>
+                <span>預測角球: <strong id="modal-pred-corners" class="text-emerald-300">--</strong></span>
             </div>
 
             <button onclick="closeModal()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg transition">
@@ -116,8 +131,8 @@
                         <td class="p-3 font-bold text-emerald-400">${m.predScore}</td>
                         <td class="p-3 text-emerald-300">${m.predCorners}</td>
                         <td class="p-3">
-                            <span class="px-2.5 py-1 rounded text-xs font-bold ${m.status.includes('LIVE') || m.status.includes('進行') ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-700 text-slate-200'}">
-                                ${m.score} (${m.status})
+                            <span class="px-2.5 py-1 rounded text-xs font-bold ${m.statusShort === 'LIVE' || m.statusShort === '1H' || m.statusShort === '2H' ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-700 text-slate-200'}">
+                                ${m.score} (${m.elapsed ? m.elapsed + '\'' : m.status})
                             </span>
                         </td>
                     </tr>
@@ -127,7 +142,7 @@
             }
         }
 
-        function openModal(id) {
+        async function openModal(id) {
             const m = allMatches.find(item => item.id == id);
             if(!m) return;
 
@@ -136,12 +151,54 @@
             document.getElementById('modal-time').innerText = `開賽時間: ${m.time}`;
             document.getElementById('modal-status').innerText = m.status;
             document.getElementById('modal-score').innerText = m.score;
-            document.getElementById('modal-elapsed').innerText = `比賽進度: ${m.elapsed ? m.elapsed + '\'' : '未開始'}`;
-            document.getElementById('modal-analysis').innerText = m.liveAnalysis;
+            document.getElementById('modal-elapsed').innerText = `精準實時進度: ${m.elapsed ? m.elapsed + '\'' : '未開始'} 分鐘`;
             document.getElementById('modal-pred-score').innerText = m.predScore;
             document.getElementById('modal-pred-corners').innerText = m.predCorners;
 
             document.getElementById('match-modal').classList.remove('hidden');
+
+            // 請求詳盡 Stats 與 Events
+            try {
+                const res = await fetch(`/api/match/${id}`);
+                const data = await res.json();
+
+                // 渲染 Stats
+                const statsContainer = document.getElementById('modal-stats-container');
+                if (data.statistics && data.statistics.length >= 2) {
+                    const homeStats = data.statistics[0].statistics || [];
+                    const awayStats = data.statistics[1].statistics || [];
+                    
+                    statsContainer.innerHTML = homeStats.map((st, idx) => {
+                        const awaySt = awayStats[idx] || { value: 0 };
+                        return `
+                            <div class="flex justify-between items-center border-b border-slate-800 pb-1">
+                                <span class="w-1/4 text-left text-emerald-300 font-bold">${st.value}</span>
+                                <span class="w-2/4 text-center text-slate-400">${st.type}</span>
+                                <span class="w-1/4 text-right text-amber-300 font-bold">${awaySt.value}</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    statsContainer.innerHTML = `<div class="text-center text-slate-400">暫無詳細技術統計數據</div>`;
+                }
+
+                // 渲染 Events / Summary
+                const eventsContainer = document.getElementById('modal-events-container');
+                if (data.events && data.events.length > 0) {
+                    eventsContainer.innerHTML = data.events.map(ev => `
+                        <div class="flex items-center justify-between bg-slate-800/80 p-2 rounded border border-slate-700 text-xs">
+                            <span class="text-amber-400 font-bold">${ev.time.elapsed}'</span>
+                            <span class="text-white">${ev.team.name} - ${ev.player.name || ''}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${ev.type === 'Goal' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'}">${ev.type} (${ev.detail || ''})</span>
+                        </div>
+                    `).join('');
+                } else {
+                    eventsContainer.innerHTML = `<div class="text-center text-slate-400">目前尚無入球或黃牌事件記錄</div>`;
+                }
+
+            } catch (e) {
+                console.error(e);
+            }
         }
 
         function closeModal() {
@@ -149,7 +206,7 @@
         }
 
         loadLiveData();
-        setInterval(loadLiveData, 30000); // 每 30 秒自動刷新實時比分
+        setInterval(loadLiveData, 20000); // 每 20 秒自動同步最新比分與分鐘數
     </script>
 </body>
 </html>
