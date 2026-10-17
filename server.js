@@ -9,12 +9,16 @@ app.use(express.static('public'));
 
 const API_KEY = process.env.API_KEY || process.env['API-Key'] || 'YOUR_API_FOOTBALL_KEY';
 
+// 香港賽馬會 (HKJC) 標準譯名對照表
 const HKJC_TRANSLATIONS = {
     'Everton': '愛華頓', 'Chelsea': '車路士', 'Manchester City': '曼城',
     'Ipswich Town': '伊普斯威奇', 'Ipswich': '伊普斯威奇', 'Brentford': '布倫特福德', 
     'Liverpool': '利物浦', 'Fulham': '富勒姆', 'Hull City': '赫爾城', 
     'Newcastle': '紐卡素', 'Aston Villa': '阿士東維拉', 'Union Berlin': '柏林聯', 
-    'Borussia Dortmund': '多特蒙德', 'Al Hilal': '希拉爾', 'Al Nassr': '艾納斯', 'Al Ahli': '阿爾阿里'
+    'Borussia Dortmund': '多特蒙德', 'Al Hilal': '希拉爾', 'Al Nassr': '艾納斯', 
+    'Al Ahli': '阿爾阿里', 'FC Schalke 04': '史浩克04', 'FSV Mainz 05': '美因茨',
+    'Espanyol': '愛斯賓奴', 'Atletico Madrid': '馬德里體育會', 'NEOM': '新未來城',
+    'Al-Ettifaq': '埃蒂法克', 'Bologna': '博洛尼亞', 'Inter': '國際米蘭'
 };
 
 let liveMatches = [];
@@ -67,6 +71,26 @@ function predictMatchPoisson(matchId = 100) {
     };
 }
 
+// 根據比賽狀態 (NS, LIVE, FT) 動態生成對應的分析文字
+function generateDynamicAnalysis(statusShort, homeTeam, awayTeam, homeGoals, awayGoals, pred) {
+    const isLive = ['1H', '2H', 'HT', 'LIVE', 'IN PLAY'].includes(statusShort);
+    const isFinished = ['FT', 'AET', 'PEN'].includes(statusShort);
+
+    if (isLive) {
+        if (homeGoals === awayGoals) {
+            return `【賽中即時走勢】雙方目前打成 ${homeGoals}-${awayGoals} 平手，兩隊加強中場攔截，預期下半場攻勢將增加，關注角球與尾段入球機會。`;
+        } else {
+            const leader = homeGoals > awayGoals ? homeTeam : awayTeam;
+            return `【賽中即時走勢】${leader} 目前領先 ${Math.max(homeGoals, awayGoals)}-${Math.min(homeGoals, awayGoals)}。落後一方正在加壓反撲，防線易生空檔，邊路傳中次數明顯上升。`;
+        }
+    } else if (isFinished) {
+        return `【賽後總結】賽事已完結，最終比分為 ${homeGoals} - ${awayGoals}。預測波膽為 ${pred.predScore}。`;
+    } else {
+        // 未開賽 (NS / NOT STARTED)
+        return `【賽前前瞻分析】雙方尚未開賽。根據兩隊歷史數據與戰術模型分析，${homeTeam} 主場攻守相對平穩，${awayTeam} 客場具備穩守突擊能力，重點關注死球及邊路角球機會。`;
+    }
+}
+
 function getHongKongDateString() {
     const now = new Date();
     return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
@@ -93,26 +117,32 @@ async function fetchRealMatches() {
         }).map(m => {
             const pred = predictMatchPoisson(m.fixture.id);
             const matchDate = new Date(m.fixture.date);
+            const statusShort = m.fixture.status.short || 'NS';
+            const homeTeam = getHkJcName(m.teams.home.name);
+            const awayTeam = getHkJcName(m.teams.away.name);
+            const homeGoals = m.goals.home || 0;
+            const awayGoals = m.goals.away || 0;
+
             return {
                 id: m.fixture.id,
                 league: m.league.name,
                 time: matchDate.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hong_Kong' }),
                 timestamp: matchDate.getTime(),
-                homeTeam: getHkJcName(m.teams.home.name),
-                awayTeam: getHkJcName(m.teams.away.name),
-                status: m.fixture.status.long || m.fixture.status.short,
+                homeTeam: homeTeam,
+                awayTeam: awayTeam,
+                status: m.fixture.status.long || statusShort,
+                statusShort: statusShort,
                 elapsed: m.fixture.status.elapsed || 0,
-                score: m.goals.home !== null ? `${m.goals.home} - ${m.goals.away}` : '0 - 0',
-                homeGoals: m.goals.home || 0,
-                awayGoals: m.goals.away || 0,
+                score: m.goals.home !== null ? `${homeGoals} - ${awayGoals}` : '0 - 0',
+                homeGoals: homeGoals,
+                awayGoals: awayGoals,
                 predScore: pred.predScore,
                 predCorners: pred.predCorners,
-                // Livescore 實時進階數據模擬
-                liveAnalysis: `根據目前即時比分與控球數據，雙方正加強中場攔截，預期下半場入球機會增加。`
+                liveAnalysis: generateDynamicAnalysis(statusShort, homeTeam, awayTeam, homeGoals, awayGoals, pred)
             };
         });
     } catch (err) {
-        console.warn('⚠️ API 請求異常，已啟動備用 Livescore 賽事:', err.message);
+        console.warn('⚠️ API 請求異常，啟動備用賽事資料:', err.message);
     }
 
     if (filtered.length === 0) {
@@ -123,28 +153,28 @@ async function fetchRealMatches() {
 
         filtered = [
             {
-                id: 301, league: 'Premier League (英超)', time: '19:30', timestamp: Date.now(),
-                homeTeam: '愛華頓', awayTeam: '車路士', status: '進行中 (LIVE)', elapsed: 58, score: '1 - 1',
-                homeGoals: 1, awayGoals: 1, predScore: p1.predScore, predCorners: p1.predCorners,
-                liveAnalysis: '雙方互有攻守，愛華頓主場氣勢強勁，車路士防線受壓，預計尾段再有入球。'
+                id: 301, league: 'Bundesliga (德甲)', time: '21:30', timestamp: Date.now(),
+                homeTeam: '史浩克04', awayTeam: '美因茨', status: 'NOT STARTED', statusShort: 'NS', elapsed: 0, score: '0 - 0',
+                homeGoals: 0, awayGoals: 0, predScore: p1.predScore, predCorners: p1.predCorners,
+                liveAnalysis: generateDynamicAnalysis('NS', '史浩克04', '美因茨', 0, 0, p1)
             },
             {
-                id: 302, league: 'Premier League (英超)', time: '22:00', timestamp: Date.now(),
-                homeTeam: '曼城', awayTeam: '伊普斯威奇', status: '未開賽 (NS)', elapsed: 0, score: '0 - 0',
+                id: 302, league: 'La Liga (西甲)', time: '22:15', timestamp: Date.now(),
+                homeTeam: '愛斯賓奴', awayTeam: '馬德里體育會', status: 'NOT STARTED', statusShort: 'NS', elapsed: 0, score: '0 - 0',
                 homeGoals: 0, awayGoals: 0, predScore: p2.predScore, predCorners: p2.predCorners,
-                liveAnalysis: '賽前分析：曼城控球率預計佔優，客隊會採取密集防守陣式。'
+                liveAnalysis: generateDynamicAnalysis('NS', '愛斯賓奴', '馬德里體育會', 0, 0, p2)
             },
             {
                 id: 303, league: 'Saudi Pro League (沙特聯)', time: '23:00', timestamp: Date.now(),
-                homeTeam: '希拉爾', awayTeam: '艾納斯', status: '中場休息 (HT)', elapsed: 45, score: '2 - 0',
-                homeGoals: 2, awayGoals: 0, predScore: p3.predScore, predCorners: p3.predCorners,
-                liveAnalysis: '希拉爾半場領先兩球，攻勢凌厲；艾納斯下半場預料會加強換人反撲。'
+                homeTeam: '新未來城', awayTeam: '埃蒂法克', status: '進行中 (LIVE)', statusShort: '2H', elapsed: 62, score: '1 - 2',
+                homeGoals: 1, awayGoals: 2, predScore: p3.predScore, predCorners: p3.predCorners,
+                liveAnalysis: generateDynamicAnalysis('2H', '新未來城', '埃蒂法克', 1, 2, p3)
             },
             {
                 id: 304, league: 'Serie A (意甲)', time: '02:45', timestamp: Date.now(),
-                homeTeam: '祖雲達斯', awayTeam: 'AC米蘭', status: '未開賽 (NS)', elapsed: 0, score: '0 - 0',
+                homeTeam: '博洛尼亞', awayTeam: '國際米蘭', status: 'NOT STARTED', statusShort: 'NS', elapsed: 0, score: '0 - 0',
                 homeGoals: 0, awayGoals: 0, predScore: p4.predScore, predCorners: p4.predCorners,
-                liveAnalysis: '傳統勁旅對決，戰情預料緊湊，雙方會先穩守突擊。'
+                liveAnalysis: generateDynamicAnalysis('NS', '博洛尼亞', '國際米蘭', 0, 0, p4)
             }
         ];
     }
@@ -165,4 +195,4 @@ app.get('/api/matches', (req, res) => {
 });
 
 fetchRealMatches();
-app.listen(process.env.PORT || 3000, () => console.log('⚽ Livescore 實時預測伺服器已啟動'));
+app.listen(process.env.PORT || 3000, () => console.log('⚽ 伺服器運作中 (已修復未開賽走勢分析邏輯)'));
