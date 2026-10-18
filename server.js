@@ -7,9 +7,9 @@ const app = express();
 app.use(cors());
 app.use(express.static('public'));
 
-// 🔑 三大 API 的金鑰設定（全部讀取自 Render 環境變數，若未設定則使用安全預設值）
+// 🔑 讀取 Render 環境變數
 const API_FOOTBALL_KEY = process.env.API_KEY || '';
-const THESPORTSDB_KEY = process.env.THESPORTSDB_KEY || '3'; // TheSportsDB 預設免費 Key
+const THESPORTSDB_KEY = process.env.THESPORTSDB_KEY || '3'; 
 const FOOTBALL_DATA_KEY = process.env.FOOTBALL_DATA_KEY || '';
 
 // 香港賽馬會 (HKJC) 標準譯名對照表
@@ -27,22 +27,11 @@ let liveMatches = [];
 let hudlXgWeights = { leagueAvgXG: 1.38 };
 
 function getHkJcName(englishName) {
-    return HKJC_TRANSLATIONS[englishName] || englishName;
-}
-
-// -------------------------------------------------------------
-// 📊 載入 Hudl Open Data 歷史 xG 權重
-// -------------------------------------------------------------
-async function loadHudlOpenData() {
-    try {
-        const res = await axios.get('https://raw.githubusercontent.com/hudl/open-data/master/data/competitions.json', { timeout: 6000 });
-        if (res.data && res.data.length > 0) {
-            hudlXgWeights.leagueAvgXG = 1.35;
-            console.log('✅ Hudl Open Data 載入成功！');
-        }
-    } catch (err) {
-        console.warn('⚠️ Hudl Open Data 載入警告:', err.message);
+    if (!englishName) return '未知球隊';
+    for (let key in HKJC_TRANSLATIONS) {
+        if (englishName.includes(key)) return HKJC_TRANSLATIONS[key];
     }
+    return englishName;
 }
 
 // 🧮 卜瓦松分佈預測模型
@@ -96,22 +85,20 @@ function getHongKongDateString() {
     return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
 }
 
-// -------------------------------------------------------------
-// 🌐 三大 API 智能輪詢與自動備援主程式
-// -------------------------------------------------------------
+// 🌐 三大 API 自動切換主邏輯
 async function fetchRealMatches() {
     let filtered = [];
     const todayHKT = getHongKongDateString();
 
     // ---------------------------------------------------------
-    // 嘗試方法 1：使用 API-Football
+    // 1. API-Football
     // ---------------------------------------------------------
-    if (API_FOOTBALL_KEY && API_FOOTBALL_KEY !== 'YOUR_API_FOOTBALL_KEY') {
+    if (API_FOOTBALL_KEY && API_FOOTBALL_KEY.length > 10) {
         try {
             console.log('正在透過 API-Football 獲取賽事...');
             const res = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${todayHKT}`, {
                 headers: { 'x-apisports-key': API_FOOTBALL_KEY },
-                timeout: 7000
+                timeout: 10000
             });
             const raw = res.data.response || [];
             if (raw.length > 0) {
@@ -143,19 +130,19 @@ async function fetchRealMatches() {
                 return;
             }
         } catch (e) {
-            console.warn('⚠️ API-Football 額度耗盡或請求失敗，自動切換至第二數據源...', e.message);
+            console.warn('⚠️ API-Football 請求失敗:', e.message);
         }
     }
 
     // ---------------------------------------------------------
-    // 嘗試方法 2：使用 Football-Data.org
+    // 2. Football-Data.org (加強優化: 指定日期範圍避開 Timeout)
     // ---------------------------------------------------------
-    if (FOOTBALL_DATA_KEY && FOOTBALL_DATA_KEY !== 'YOUR_FOOTBALL_DATA_API_KEY') {
+    if (FOOTBALL_DATA_KEY && FOOTBALL_DATA_KEY.length > 10) {
         try {
             console.log('正在透過 Football-Data.org 獲取賽事...');
-            const res = await axios.get('https://api.football-data.org/v4/matches', {
+            const res = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${todayHKT}&dateTo=${todayHKT}`, {
                 headers: { 'X-Auth-Token': FOOTBALL_DATA_KEY },
-                timeout: 7000
+                timeout: 12000 // 提升逾時上限至 12 秒
             });
             const matches = res.data.matches || [];
             if (matches.length > 0) {
@@ -187,18 +174,19 @@ async function fetchRealMatches() {
                 return;
             }
         } catch (e) {
-            console.warn('⚠️ Football-Data.org 請求失敗，自動切換至第三數據源...', e.message);
+            console.warn('⚠️ Football-Data.org 請求失敗:', e.message);
         }
     }
 
     // ---------------------------------------------------------
-    // 嘗試方法 3：使用 TheSportsDB
+    // 3. TheSportsDB (修正 URL 端點)
     // ---------------------------------------------------------
     try {
         console.log('正在透過 TheSportsDB 獲取賽事...');
-        const res = await axios.get(`https://www.thesportsdb.com/api/v1/json/${THESPORTSDB_KEY}/eventsday.php?d=${todayHKT}&s=Soccer`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 7000
+        const apiKey = THESPORTSDB_KEY && THESPORTSDB_KEY !== '3' ? THESPORTSDB_KEY : '2';
+        const res = await axios.get(`https://www.thesportsdb.com/api/v1/json/${apiKey}/eventsday.php?d=${todayHKT}&s=Soccer`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 10000
         });
         const events = res.data.events || [];
         if (events.length > 0) {
@@ -234,7 +222,7 @@ async function fetchRealMatches() {
     }
 
     // ---------------------------------------------------------
-    // 最終防護：若所有 API 皆無法連接，啟用高精度穩定備用賽程
+    // 4. 高精度內建保底數據
     // ---------------------------------------------------------
     const p1 = predictMatchPoisson(301);
     const p2 = predictMatchPoisson(302);
@@ -265,7 +253,6 @@ async function fetchRealMatches() {
     ];
 }
 
-// 🔍 單場比賽詳情 API
 app.get('/api/match/:id', (req, res) => {
     const matchId = req.params.id;
     const basicMatch = liveMatches.find(m => m.id == matchId);
@@ -273,18 +260,17 @@ app.get('/api/match/:id', (req, res) => {
     res.json({
         success: true,
         statistics: [
-            { team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, statistics: [{ type: 'Ball Possession', value: '55%' }, { type: 'Total Shots', value: 14 }, { type: 'Shots on Goal', value: 6 }, { type: 'Corner Kicks', value: 7 }] },
-            { team: { name: basicMatch ? basicMatch.awayTeam : '客隊' }, statistics: [{ type: 'Ball Possession', value: '45%' }, { type: 'Total Shots', value: 10 }, { type: 'Shots on Goal', value: 4 }, { type: 'Corner Kicks', value: 4 }] }
+            { team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, statistics: [{ type: 'Ball Possession', value: '55%' }, { type: 'Total Shots', value: 14 }, { type: 'Shots on Goal', value: 6 }] },
+            { team: { name: basicMatch ? basicMatch.awayTeam : '客隊' }, statistics: [{ type: 'Ball Possession', value: '45%' }, { type: 'Total Shots', value: 10 }, { type: 'Shots on Goal', value: 4 }] }
         ],
         events: [
-            { time: { elapsed: 24 }, team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, player: { name: '主力前鋒' }, type: 'Goal', detail: 'Normal Goal' },
-            { time: { elapsed: 62 }, team: { name: basicMatch ? basicMatch.awayTeam : '客隊' }, player: { name: '中場核心' }, type: 'Goal', detail: 'Penalty' }
+            { time: { elapsed: 24 }, team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, player: { name: '主力前鋒' }, type: 'Goal', detail: 'Normal Goal' }
         ],
         match: basicMatch
     });
 });
 
-cron.schedule('*/2 * * * *', () => {
+cron.schedule('*/3 * * * *', () => {
     fetchRealMatches();
 });
 
@@ -297,9 +283,8 @@ app.get('/api/matches', (req, res) => {
 });
 
 (async () => {
-    await loadHudlOpenData();
     await fetchRealMatches();
     app.listen(process.env.PORT || 3000, () => {
-        console.log('⚽ 三大 API 智能備援伺服器運行中！');
+        console.log('⚽ 修正版三大 API 備援伺服器運行中！');
     });
 })();
