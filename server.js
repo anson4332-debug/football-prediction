@@ -230,3 +230,21 @@ app.get('/api/matches', (req, res) => {
     await fetchRealMatches();
     app.listen(process.env.PORT || 3000, () => console.log('⚽ 穩定伺服器運作中 (已完全替換 API-Football)'));
 })();
+
+async function fetchRealMatches() {
+    let filtered = [];
+    try {
+        const todayHKT = getHongKongDateString();
+        console.log(`正在從 TheSportsDB 獲取香港日期 ${todayHKT} 的真實賽程...`);
+
+        // 🛡️ 加入標準瀏覽器 User-Agent 避開 403 阻擋
+        const response = await axios.get(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${todayHKT}&s=Soccer`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            },
+            timeout: 8000
+        });
+
+        const events = response.data.events || [];
+        // ... (後續處理邏輯保持不變)
