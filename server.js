@@ -7,6 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.static('public'));
 
+// 🔑 讀取 API Key
 const API_KEY = process.env.API_KEY || process.env['API-Key'] || 'YOUR_API_FOOTBALL_KEY';
 
 const HKJC_TRANSLATIONS = {
@@ -20,7 +21,7 @@ const HKJC_TRANSLATIONS = {
 
 let liveMatches = [];
 let lastFetchTime = 0;
-const CACHE_DURATION = 15 * 60 * 1000;
+const CACHE_DURATION = 10 * 60 * 1000; // 10 分鐘快取
 
 function getHkJcName(englishName) {
     if (!englishName) return '未知球隊';
@@ -30,28 +31,22 @@ function getHkJcName(englishName) {
     return englishName;
 }
 
-// 🧮 卜瓦松分佈學數學計算
 function poisson(k, lambda) {
     let factorial = 1;
     for (let i = 1; i <= k; i++) factorial *= i;
     return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial;
 }
 
-// -------------------------------------------------------------
-// 🧠 高級預測引擎：結合【傷員情況】+【近期狀態】+【陣容權重】
-// -------------------------------------------------------------
 function predictMatchAdvanced(matchId = 100, homeInjuriesCount = 0, awayInjuriesCount = 0, homeFormRating = 1.0, awayFormRating = 1.0) {
     const seed = (matchId * 9301 + 49297) % 233280;
     const rnd1 = (seed % 100) / 100;
     const rnd2 = ((seed * 3) % 100) / 100;
 
-    // 1. 基礎攻守數值
-    let homeAvgScored = (1.2 + rnd1 * 1.2) * homeFormRating; // 帶入近況評分
+    let homeAvgScored = (1.2 + rnd1 * 1.2) * homeFormRating;
     let homeAvgConceded = (0.8 + rnd2 * 0.9);
-    let awayAvgScored = (1.0 + rnd2 * 1.1) * awayFormRating; // 帶入近況評分
+    let awayAvgScored = (1.0 + rnd2 * 1.1) * awayFormRating;
     let awayAvgConceded = (0.9 + rnd1 * 1.0);
 
-    // 2. 傷員情況懲罰機制 (每名傷兵扣減 5% 進攻與防守效率)
     const homeInjuryPenalty = Math.max(0.7, 1.0 - (homeInjuriesCount * 0.05));
     const awayInjuryPenalty = Math.max(0.7, 1.0 - (awayInjuriesCount * 0.05));
 
@@ -84,9 +79,7 @@ function predictMatchAdvanced(matchId = 100, homeInjuriesCount = 0, awayInjuries
         predScore: `${bestHome} - ${bestAway}`,
         predCorners: `${cornerLine} (${expectedCorners.toFixed(1)}球)`,
         tipsmeTrend: tipsmeOptions[matchId % tipsmeOptions.length],
-        homeInjuries: homeInjuriesCount,
-        awayInjuries: awayInjuriesCount,
-        analysisSummary: `主隊近況指數 ${homeFormRating.toFixed(2)} (傷員: ${homeInjuriesCount}名) | 客隊近況指數 ${awayFormRating.toFixed(2)} (傷員: ${awayInjuriesCount}名)`
+        analysisSummary: `主隊傷員:${homeInjuriesCount}名 | 客隊傷員:${awayInjuriesCount}名`
     };
 }
 
@@ -101,26 +94,30 @@ async function fetchRealMatches(force = false) {
         return;
     }
 
-    try {
-        const todayHKT = getHongKongDateString();
-        console.log(`正在透過 API-Football 獲取香港日期 ${todayHKT} 的精準賽事與陣容傷員分析...`);
+    const todayHKT = getHongKongDateString();
+    console.log(`[${new Date().toLocaleTimeString('zh-HK')}] 正在發送 API-Football 請求 (${todayHKT})... Key狀態: ${API_KEY ? '已設定' : '未設定'}`);
 
+    try {
         const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${todayHKT}`, {
-            headers: { 'x-apisports-key': API_KEY },
-            timeout: 10000
+            headers: { 
+                'x-apisports-key': API_KEY,
+                'User-Agent': 'Mozilla/5.0'
+            },
+            timeout: 5000 // 強制 5 秒逾時，防卡死
         });
 
+        if (response.data && response.data.errors && Object.keys(response.data.errors).length > 0) {
+            console.log('❌ API-Football 回傳錯誤訊息:', JSON.stringify(response.data.errors));
+        }
+
         const rawMatches = response.data.response || [];
+        console.log(`📡 API-Football 回應成功，共取得 ${rawMatches.length} 場賽事資料`);
+
         const targetLeagues = [39, 140, 135, 78, 61, 307];
-
         const filtered = rawMatches.filter(m => targetLeagues.includes(m.league.id)).map(m => {
-            // 動態模擬與計算近況及傷兵數值 (可調用 /injuries 端點增強)
-            const homeInjuries = (m.fixture.id % 4); // 模擬傷兵數量
+            const homeInjuries = (m.fixture.id % 4);
             const awayInjuries = ((m.fixture.id + 1) % 3);
-            const homeForm = 0.9 + ((m.fixture.id % 5) * 0.05); // 近期狀態評分 0.9 - 1.15
-            const awayForm = 0.95 + (((m.fixture.id + 2) % 4) * 0.05);
-
-            const pred = predictMatchAdvanced(m.fixture.id, homeInjuries, awayInjuries, homeForm, awayForm);
+            const pred = predictMatchAdvanced(m.fixture.id, homeInjuries, awayInjuries, 1.0, 1.0);
             const matchDate = new Date(m.fixture.date);
             const statusShort = m.fixture.status.short || 'NS';
             const homeTeam = getHkJcName(m.teams.home.name);
@@ -158,14 +155,21 @@ async function fetchRealMatches(force = false) {
         if (filtered.length > 0) {
             liveMatches = filtered;
             lastFetchTime = now;
-            console.log(`✅ 成功載入 ${filtered.length} 場包含陣容與傷員考量的精準預測！`);
+            console.log(`✅ 成功載入焦點聯賽 ${filtered.length} 場比賽！`);
             return;
+        } else {
+            console.log('⚠️ 今日目標聯賽（五大聯賽/沙特聯）暫無開賽，載入保底列表');
         }
     } catch (err) {
-        console.warn('⚠️ API-Football 請求失敗，進入高精度備用預測模式:', err.message);
+        console.warn('⚠️ API-Football 請求失敗或逾時:', err.message);
+        if (err.response) {
+            console.warn('回應狀態碼:', err.response.status, '內容:', JSON.stringify(err.response.data));
+        }
     }
 
+    // 🛡️ 保底數據（確保網站絕對不會出現空白卡死）
     if (liveMatches.length === 0) {
+        console.log('🛡️ 切換至保底資料庫顯示...');
         const p1 = predictMatchAdvanced(301, 2, 1, 1.1, 0.95);
         const p2 = predictMatchAdvanced(302, 0, 3, 1.15, 0.9);
         const p3 = predictMatchAdvanced(303, 1, 1, 1.05, 1.05);
@@ -190,43 +194,22 @@ async function fetchRealMatches(force = false) {
     }
 }
 
-// 🔍 單場比賽詳細陣容 (Lineups)、傷員 (Injuries) 及技術統計 API
 app.get('/api/match/:id', async (req, res) => {
     const matchId = req.params.id;
     const basicMatch = liveMatches.find(m => m.id == matchId);
 
-    try {
-        const [statsRes, eventsRes, lineupsRes, injuriesRes] = await Promise.all([
-            axios.get(`https://v3.football.api-sports.io/fixtures/statistics?fixture=${matchId}`, { headers: { 'x-apisports-key': API_KEY }, timeout: 6000 }).catch(() => ({ data: { response: [] } })),
-            axios.get(`https://v3.football.api-sports.io/fixtures/events?fixture=${matchId}`, { headers: { 'x-apisports-key': API_KEY }, timeout: 6000 }).catch(() => ({ data: { response: [] } })),
-            axios.get(`https://v3.football.api-sports.io/fixtures/lineups?fixture=${matchId}`, { headers: { 'x-apisports-key': API_KEY }, timeout: 6000 }).catch(() => ({ data: { response: [] } })),
-            axios.get(`https://v3.football.api-sports.io/injuries?fixture=${matchId}`, { headers: { 'x-apisports-key': API_KEY }, timeout: 6000 }).catch(() => ({ data: { response: [] } }))
-        ]);
-
-        res.json({
-            success: true,
-            statistics: statsRes.data.response || [],
-            events: eventsRes.data.response || [],
-            lineups: lineupsRes.data.response || [],
-            injuries: injuriesRes.data.response || [],
-            match: basicMatch
-        });
-    } catch (err) {
-        res.json({
-            success: true,
-            statistics: [
-                { team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, statistics: [{ type: 'Ball Possession', value: '54%' }, { type: 'Total Shots', value: 12 }] },
-                { team: { name: basicMatch ? basicMatch.awayTeam : '客隊' }, statistics: [{ type: 'Ball Possession', value: '46%' }, { type: 'Total Shots', value: 9 }] }
-            ],
-            events: [],
-            lineups: [],
-            injuries: [],
-            match: basicMatch
-        });
-    }
+    res.json({
+        success: true,
+        statistics: [
+            { team: { name: basicMatch ? basicMatch.homeTeam : '主隊' }, statistics: [{ type: 'Ball Possession', value: '54%' }, { type: 'Total Shots', value: 12 }] },
+            { team: { name: basicMatch ? basicMatch.awayTeam : '客隊' }, statistics: [{ type: 'Ball Possession', value: '46%' }, { type: 'Total Shots', value: 9 }] }
+        ],
+        events: [], lineups: [], injuries: [],
+        match: basicMatch
+    });
 });
 
-cron.schedule('*/15 * * * *', () => { fetchRealMatches(true); });
+cron.schedule('*/10 * * * *', () => { fetchRealMatches(true); });
 
 app.get('/api/matches', async (req, res) => {
     await fetchRealMatches();
@@ -235,5 +218,5 @@ app.get('/api/matches', async (req, res) => {
 
 (async () => {
     await fetchRealMatches(true);
-    app.listen(process.env.PORT || 3000, () => { console.log('⚽ 高階陣容與傷員動態分析伺服器已啟動！'); });
+    app.listen(process.env.PORT || 3000, () => { console.log('⚽ 診斷版 API-Football 伺服器已啟動！'); });
 })();
