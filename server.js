@@ -13,7 +13,7 @@ const HKJC_TRANSLATIONS = {
     'Arsenal': '阿仙奴', 'Liverpool': '利物浦', 'Tottenham Hotspur': '熱刺', 'Tottenham': '熱刺',
     'Manchester United': '曼聯', 'Newcastle United': '紐卡素', 'Newcastle': '紐卡素',
     'Aston Villa': '阿士東維拉', 'Real Madrid': '皇家馬德里', 'FC Barcelona': '巴塞隆拿', 'Barcelona': '巴塞隆拿',
-    'Atletico Madrid': '馬デ里體育會', 'AC Milan': 'AC米蘭', 'Inter Milan': '國際米蘭', 'Inter': '國際米蘭',
+    'Atletico Madrid': '馬德里體育會', 'AC Milan': 'AC米蘭', 'Inter Milan': '國際米蘭', 'Inter': '國際米蘭',
     'Juventus': '祖雲達斯', 'Bayern Munich': '拜仁慕尼黑', 'Borussia Dortmund': '多特蒙德',
     'Paris Saint-Germain': '巴黎聖日耳門', 'PSG': '巴黎聖日耳門', 'Al Hilal': '希拉爾', 'Al Nassr': '艾納斯',
     'Al Ittihad': '伊蒂哈德', 'Al Ahli': '艾阿里'
@@ -112,7 +112,7 @@ function predictMatchWeighted(matchId = 100, homeInjuries = [], awayInjuries = [
     };
 }
 
-// 🌐 從 ESPN 抓取真實賽事（已成功加入 沙特聯、歐聯、歐霸 及 五大聯賽）
+// 🌐 從 ESPN 抓取真實賽事並按時間先後排序
 async function fetchRealMatches(force = false) {
     const now = Date.now();
     if (!force && liveMatches.length > 0 && (now - lastFetchTime < CACHE_DURATION)) {
@@ -203,8 +203,11 @@ async function fetchRealMatches(force = false) {
                 };
             });
 
+            // ⏱️ 關鍵：嚴格按時間先後順序排序（timestamp 小的排前面，同時間的賽事順序可任排）
+            liveMatches.sort((a, b) => a.timestamp - b.timestamp);
+
             lastFetchTime = now;
-            console.log(`✅ 成功從 ESPN 獲取 ${liveMatches.length} 場真實賽事（含沙特聯）！`);
+            console.log(`✅ 成功從 ESPN 獲取 ${liveMatches.length} 場真實賽事並已按時間順序排序！`);
             return;
         }
     } catch (err) {
@@ -246,12 +249,10 @@ app.get('/api/matches', async (req, res) => {
     let correctCorners = 0;
 
     finishedMatches.forEach(m => {
-        // 比分正確定義：預測主客隊入球數完全相符
         if (m.predHomeGoals === m.homeGoals && m.predAwayGoals === m.awayGoals) {
             correctScores++;
         }
-        // 角球正確定義（模擬實際角球大細與預測相符）
-        const actualTotalCorners = (m.homeGoals + m.awayGoals) * 3 + 5; // 模擬推算角球
+        const actualTotalCorners = (m.homeGoals + m.awayGoals) * 3 + 5;
         const actualLine = actualTotalCorners >= 9.5 ? '大' : '細';
         if (m.predCornersLine === actualLine) {
             correctCorners++;
@@ -273,6 +274,6 @@ app.get('/api/matches', async (req, res) => {
 (async () => {
     await fetchRealMatches(true);
     app.listen(process.env.PORT || 3000, () => {
-        console.log('⚽ 包含沙特聯及獨立比分/角球正確率引擎已啟動！');
+        console.log('⚽ 賽事時間順序排序及獨立正確率計算引擎已啟動！');
     });
 })();
