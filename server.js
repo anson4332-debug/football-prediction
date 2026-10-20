@@ -37,6 +37,12 @@ function factorial(n) {
     return res;
 }
 
+// 取得香港當前日期字串 (YYYY-MM-DD)
+function getHongKongDateString() {
+    const now = new Date();
+    return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
+}
+
 // 🧠 自動評估傷兵重要性
 function evaluateInjuryImpact(injuryList = []) {
     let keyAbsence = 0;
@@ -112,7 +118,7 @@ function predictMatchWeighted(matchId = 100, homeInjuries = [], awayInjuries = [
     };
 }
 
-// 🌐 從 ESPN 抓取真實賽事並按時間先後排序
+// 🌐 從 ESPN 抓取真實賽事：嚴格篩選今日香港時間的比賽，並按時間順序排序
 async function fetchRealMatches(force = false) {
     const now = Date.now();
     if (!force && liveMatches.length > 0 && (now - lastFetchTime < CACHE_DURATION)) {
@@ -120,7 +126,8 @@ async function fetchRealMatches(force = false) {
     }
 
     try {
-        console.log('正在透過 ESPN 公開 API 獲取真實賽事資訊（含沙特聯、歐聯、歐霸及五大聯賽）...');
+        const todayHKT = getHongKongDateString();
+        console.log(`正在獲取香港日期 ${todayHKT} 的真實賽事資訊...`);
         
         const leagues = [
             { code: 'eng.1', name: '英格蘭超級聯賽 (英超)' },
@@ -141,12 +148,19 @@ async function fetchRealMatches(force = false) {
                     timeout: 6000
                 });
                 const competitions = res.data.events || [];
+                
                 competitions.forEach(ev => {
-                    ev._customLeagueName = leagueObj.name;
+                    const matchDateObj = new Date(ev.date);
+                    const matchDateHKT = matchDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
+                    
+                    // 🔍 嚴格過濾：只保留香港時間「今日」開賽的比賽，徹底排除其他日子的賽事
+                    if (matchDateHKT === todayHKT) {
+                        ev._customLeagueName = leagueObj.name;
+                        allEvents.push(ev);
+                    }
                 });
-                allEvents.push(...competitions);
             } catch (e) {
-                // 略過超時聯賽
+                // 略過超時或無資料的聯賽
             }
         }
 
@@ -178,7 +192,7 @@ async function fetchRealMatches(force = false) {
                 const pred = predictMatchWeighted(matchId, [], []);
 
                 const matchDate = new Date(ev.date);
-                const timeString = matchDate.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hong_Kong' });
+                const timeString = matchDate.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hong_Kong', hour12: false });
 
                 return {
                     id: matchId,
@@ -203,11 +217,11 @@ async function fetchRealMatches(force = false) {
                 };
             });
 
-            // ⏱️ 關鍵：嚴格按時間先後順序排序（timestamp 小的排前面，同時間的賽事順序可任排）
+            // ⏱️ 嚴格按照時間先後順序排序（由早到晚），完全不看賽事類型與聯賽
             liveMatches.sort((a, b) => a.timestamp - b.timestamp);
 
             lastFetchTime = now;
-            console.log(`✅ 成功從 ESPN 獲取 ${liveMatches.length} 場真實賽事並已按時間順序排序！`);
+            console.log(`✅ 成功獲取今日香港日期 ${todayHKT} 的真實賽事共 ${liveMatches.length} 場，已按時間順序排列！`);
             return;
         }
     } catch (err) {
@@ -274,6 +288,6 @@ app.get('/api/matches', async (req, res) => {
 (async () => {
     await fetchRealMatches(true);
     app.listen(process.env.PORT || 3000, () => {
-        console.log('⚽ 賽事時間順序排序及獨立正確率計算引擎已啟動！');
+        console.log('⚽ 嚴格今日過濾與全時間排序引擎已啟動！');
     });
 })();
